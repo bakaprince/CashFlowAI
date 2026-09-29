@@ -6,3 +6,4 @@ shap>=0.45.0
 matplotlib>=3.8.0
 plotly>=5.22.0
 openpyxl>=3.1.0
+kaggle>=2.0.0

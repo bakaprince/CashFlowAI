@@ -28,11 +28,12 @@ graph TD
 
 ## ✨ Key Features
 
-- **📂 Flexible Data Ingestion**:
-  - Upload custom CSV or Excel (`.xlsx`, `.xls`) datasets.
-  - Automatically loads a pre-packaged 2-year sample dataset (`data/sample_cashflow_data.csv`) if no file is uploaded.
-  - Robust column alias normalization (recognizes aliases for `Sales`, `Expenses`, `Receivables`, `Payables`, `Cash Inflow`, `Cash Outflow`, `Cash Flow`).
-  - Automatic sanitization of currency symbols (`$`, `₹`), comma thousand-separators, and dates.
+- **📂 Real-World & Kaggle Data Ingestion**:
+  - **Pre-packaged Real SEC Datasets**: Official audited quarterly cash flow filings (2017–2026) for **Apple Inc. (AAPL)**, **Microsoft Corp. (MSFT)**, **Amazon (AMZN)**, **Alphabet/Google (GOOGL)**, and **Tesla (TSLA)**.
+  - **Kaggle Automated Ingestion & Preprocessing**: Download and preprocess any financial or e-commerce transaction dataset directly from Kaggle via the Kaggle API.
+  - **Transaction-to-CashFlow ETL Pipeline**: Converts raw order/invoice logs (Order Date, Sales, Profit, Cost) into periodic cash flow metrics (Daily, Weekly, Monthly, Quarterly).
+  - **Upload Custom Datasets**: Upload `.csv`, `.xlsx`, or `.xls` files with automatic column alias normalization and currency sanitization.
+  - **Sample SME Baseline**: 2-year synthetic operational baseline (`processed_data/sample_cashflow_data.csv`).
 
 - **📈 Machine Learning Cash Flow Forecasting**:
   - Multiple Linear Regression trained on historical operating features.
@@ -67,19 +68,30 @@ graph TD
 
 ```
 CashFlowAI/
-├── app.py                      # Main Streamlit web application & UI tabs
-├── data/
-│   └── sample_cashflow_data.csv # Default sample dataset with 30 periods
+├── app.py                            # Main Streamlit web application & UI tabs
+├── unprocessed_data/                 # Raw, unprocessed datasets showing initial states
+│   ├── raw_sec_edgar_aapl.json       # Official raw SEC EDGAR XBRL corporate filings (Apple CIK 0000320193)
+│   ├── raw_retail_transactions.csv   # Granular order-level retail transaction logs
+│   ├── raw_uncleaned_sme_cashflow.csv# Messy accounting spreadsheet with currency symbols & NaNs
+│   └── README.md                     # Data provenance, CIK taxonomy & ETL documentation
+├── processed_data/                   # Cleaned, normalized, and model-ready cash flow series
+│   ├── real_cashflow_aapl.csv        # Apple Inc. quarterly cash flow (2017–2026)
+│   ├── real_cashflow_msft.csv        # Microsoft Corp. quarterly cash flow (2017–2026)
+│   ├── real_cashflow_amzn.csv        # Amazon.com Inc. quarterly cash flow (2017–2026)
+│   ├── real_cashflow_googl.csv       # Alphabet Inc. quarterly cash flow (2017–2025)
+│   ├── real_cashflow_tsla.csv        # Tesla Inc. quarterly cash flow (2018–2026)
+│   └── sample_cashflow_data.csv      # Default sample SME dataset with 30 periods
 ├── src/
 │   ├── __init__.py
-│   ├── data_preprocessing.py   # Column alias mapping, cleaning & target derivation
-│   ├── explainability.py       # SHAP explainer computation
-│   ├── monte_carlo.py          # Monte Carlo distribution & threshold risk estimation
-│   ├── recommendations.py      # Strategic decision rules incorporating tail-risk
-│   └── scenario_analysis.py    # What-if perturbation & baseline comparison
-├── SYSTEM_ARCHITECTURE.md      # Detailed system design & component specification
-├── requirements.txt            # Project dependencies
-└── README.md                   # Project overview & quickstart
+│   ├── data_import.py                # SEC EDGAR XBRL & Kaggle transactional ETL pipelines
+│   ├── data_preprocessing.py         # Column alias mapping, regex cleaning & target derivation
+│   ├── explainability.py             # SHAP explainer computation
+│   ├── monte_carlo.py                # Monte Carlo distribution & threshold risk estimation
+│   ├── recommendations.py            # Strategic decision rules incorporating tail-risk
+│   └── scenario_analysis.py          # What-if perturbation & baseline comparison
+├── SYSTEM_ARCHITECTURE.md            # Detailed system design & component specification
+├── requirements.txt                  # Project dependencies
+└── README.md                         # Project overview & quickstart
 ```
 
 > 📖 For an in-depth technical analysis, sequence diagrams, and mathematical formulations, refer to **[SYSTEM_ARCHITECTURE.md](file:///c:/Users/BakaPrince/Documents/githubRepo/CashFlowAI/SYSTEM_ARCHITECTURE.md)**.
@@ -150,6 +162,38 @@ When uploading custom data, the application automatically handles column variati
 | `Cash Inflow` | `cash inflow`, `inflow`, `cash_inflow` | Direct cash collections |
 | `Cash Outflow`| `cash outflow`, `outflow`, `cash_outflow` | Direct cash disbursements |
 | `Cash Flow` | `cash flow`, `cash_flow`, `net cash flow` | *Optional*. Derived automatically as `Inflow - Outflow` or `Sales - Expenses` if omitted. |
+
+---
+
+## 🌐 Data Ingestion & Live ETL Pipelines
+
+CashFlowAI includes automated ingestion and preprocessing capabilities accessible directly in the Streamlit application and programmatically via `src/data_import.py`:
+
+### 1. Official SEC EDGAR Corporate Filings (No API Key Required)
+- **Built-in Datasets**: Select corporate quarterly filings (2017–2026) for Apple (`AAPL`), Microsoft (`MSFT`), Amazon (`AMZN`), Alphabet (`GOOGL`), or Tesla (`TSLA`) directly from the sidebar.
+- **Live Retrieval**: Query any public SEC ticker live via the **Kaggle & Live Data Pipeline** sidebar tab.
+- **XBRL Ingestion Module**: Use `fetch_sec_cashflow_dataset(ticker)` from `src/data_import.py`.
+
+### 2. Live Kaggle Ingestion & Preprocessing
+- Connect directly to the Kaggle API to pull enterprise datasets (e.g. `thedevastator/superstore-sales`).
+- Automatically aggregates granular transaction logs into periodic cash flows.
+- **Kaggle Module**: Use `download_and_preprocess_kaggle(slug)` from `src/data_import.py`.
+
+### 3. Local Transactional & Accounting Spreadsheets
+- Upload raw transaction logs or messy spreadsheets (`.csv`, `.xlsx`, `.xls`) with automated column aliasing, currency string stripping, and median imputation.
+- Select frequency: `Daily`, `Weekly`, `Monthly`, or `Quarterly`.
+
+---
+
+## 🔬 Data Lineage & ETL Processing (Raw vs Processed)
+
+CashFlowAI maintains both raw and processed datasets to demonstrate exact real-world data engineering:
+- **`unprocessed_data/`**: Holds raw SEC EDGAR XBRL filings (`raw_sec_edgar_aapl.json`), granular transactional order records (`raw_retail_transactions.csv`), and messy SME bookkeeping spreadsheets (`raw_uncleaned_sme_cashflow.csv`).
+- **`processed_data/`**: Holds standardized, normalized, and imputed cash flow time series consumed directly by the machine learning forecasting model.
+
+To inspect how raw data is transformed into model-ready series:
+- Launch `streamlit run app.py` and select **`📦 Raw Retail Transactions`** or **`🧹 Raw Messy SME Operations`** in the sidebar.
+- Open **Tab 0 ("📊 Data & Preprocessing")** to view the live **Raw Unprocessed Data Preview** alongside the cleaned, model-ready dataset.
 
 ---
 

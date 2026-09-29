@@ -1,27 +1,52 @@
-from __future__ import annotations
-
+import re
 import pandas as pd
 
 
 COLUMN_ALIASES = {
-    "date": ["date", "month", "period", "datetime"],
-    "sales": ["sales", "revenue", "turnover", "net sales"],
-    "expenses": ["expenses", "operating expenses", "costs"],
-    "receivables": ["receivables", "accounts receivable", "ar"],
-    "payables": ["payables", "accounts payable", "ap"],
-    "cash balance": ["cash balance", "cash_balance", "closing balance", "balance"],
-    "cash inflow": ["cash inflow", "inflow", "cash_inflow"],
-    "cash outflow": ["cash outflow", "outflow", "cash_outflow"],
-    "cash flow": ["cash flow", "cash_flow", "net cash flow"],
+    "date": ["date", "month", "period", "datetime", "timestamp", "day"],
+    "sales": ["sales", "revenue", "turnover", "net sales", "gross revenue", "invoicing"],
+    "expenses": ["expenses", "operating expenses", "costs", "opex", "overhead"],
+    "receivables": ["receivables", "accounts receivable", "ar", "debtors"],
+    "payables": ["payables", "accounts payable", "ap", "creditors"],
+    "cash balance": ["cash balance", "cash_balance", "closing balance", "bank balance", "balance"],
+    "cash inflow": ["cash inflow", "inflow", "cash collections", "collections"],
+    "cash outflow": ["cash outflow", "outflow", "disbursements", "cash spent"],
+    "cash flow": ["cash flow", "net cash flow", "operating cash flow"],
 }
 
 
 def normalize_column_name(name: str) -> str:
-    cleaned = str(name).strip().lower().replace("_", " ")
+    raw = str(name).strip()
+    cleaned = raw.lower().replace("_", " ")
+
+    # 1. Exact canonical or alias match
     for canonical, aliases in COLUMN_ALIASES.items():
         if cleaned == canonical or cleaned in aliases:
             return canonical.title()
-    return str(name).strip()
+
+    # 2. Tokenized keyword matching (handles punctuation, parentheticals, and slashes)
+    clean_tokens = set(re.findall(r"\b[a-z]+\b", cleaned))
+
+    if "cash" in clean_tokens and "flow" in clean_tokens and "inflow" not in clean_tokens and "outflow" not in clean_tokens:
+        return "Cash Flow"
+    if "inflow" in clean_tokens or ("cash" in clean_tokens and "in" in clean_tokens) or "collections" in clean_tokens:
+        return "Cash Inflow"
+    if "outflow" in clean_tokens or ("cash" in clean_tokens and "out" in clean_tokens) or "disbursements" in clean_tokens:
+        return "Cash Outflow"
+    if "balance" in clean_tokens:
+        return "Cash Balance"
+    if "receivable" in clean_tokens or "receivables" in clean_tokens or "ar" in clean_tokens or "debtors" in clean_tokens:
+        return "Receivables"
+    if "payable" in clean_tokens or "payables" in clean_tokens or "ap" in clean_tokens or "creditors" in clean_tokens:
+        return "Payables"
+    if any(k in clean_tokens for k in ["sales", "revenue", "turnover", "invoicing"]):
+        return "Sales"
+    if any(k in clean_tokens for k in ["expenses", "expense", "costs", "cost", "opex", "overhead"]):
+        return "Expenses"
+    if any(k in clean_tokens for k in ["date", "month", "period", "timestamp", "datetime", "day"]):
+        return "Date"
+
+    return raw
 
 
 def clean_and_prepare_dataset(df: pd.DataFrame) -> pd.DataFrame:
