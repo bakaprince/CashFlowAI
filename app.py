@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import os
-from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -10,35 +8,23 @@ import pandas as pd
 import plotly.express as px
 import shap
 import streamlit as st
+from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
-from sklearn.linear_model import LinearRegression
 
-from src.data_preprocessing import clean_and_prepare_dataset, derive_cash_flow_target
-from src.data_import import (
-    fetch_sec_cashflow_dataset,
-    preprocess_transactional_dataset,
-    download_and_preprocess_kaggle,
-    SEC_CIK_MAP,
+from src.data_preprocessing import (
+    clean_and_prepare_dataset,
+    derive_cash_flow_target,
+    normalize_column_name,
 )
 from src.explainability import compute_shap_values
-from src.scenario_analysis import apply_scenario, compare_baseline_vs_scenario
 from src.monte_carlo import run_monte_carlo
 from src.recommendations import build_recommendation
+from src.scenario_analysis import apply_scenario, compare_baseline_vs_scenario
 
-BASE_DIR = Path(__file__).resolve().parent
-PROCESSED_DATA_DIR = BASE_DIR / "processed_data"
-DATA_DIR = PROCESSED_DATA_DIR  # Backward-compatible alias
-UNPROCESSED_DATA_DIR = BASE_DIR / "unprocessed_data"
-SAMPLE_DATA_PATH = PROCESSED_DATA_DIR / "sample_cashflow_data.csv"
 CHART_KWARGS = {"width": "stretch"}
 
 st.set_page_config(page_title="CashFlowAI", page_icon="💰", layout="wide")
-
-
-@st.cache_data
-def load_csv_data(path: str) -> pd.DataFrame:
-    return pd.read_csv(path)
 
 
 def format_currency(val: float, symbol: str = "$") -> str:
@@ -50,7 +36,10 @@ def format_currency(val: float, symbol: str = "$") -> str:
 
 
 def prepare_model_data(df: pd.DataFrame):
-    cleaned = clean_and_prepare_dataset(df)
+    cleaned = df.copy()
+    if "Cash Flow" not in cleaned.columns:
+        cleaned["Cash Flow"] = derive_cash_flow_target(cleaned)
+
     feature_cols = [
         col for col in ["Sales", "Expenses", "Receivables", "Payables", "Cash Inflow", "Cash Outflow"]
         if col in cleaned.columns
@@ -58,9 +47,7 @@ def prepare_model_data(df: pd.DataFrame):
     if not feature_cols:
         raise ValueError("No valid financial feature columns found in dataset (expected Sales, Expenses, Receivables, Payables, Cash Inflow, or Cash Outflow).")
     if len(cleaned) < 5:
-        raise ValueError("The dataset must contain at least 5 rows for model training and forecasting.")
-    if "Cash Flow" not in cleaned.columns:
-        cleaned["Cash Flow"] = derive_cash_flow_target(cleaned)
+        raise ValueError(f"The dataset must contain at least 5 rows for model training and forecasting (found {len(cleaned)}).")
 
     X = cleaned[feature_cols]
     y = cleaned["Cash Flow"]
@@ -81,160 +68,76 @@ def prepare_model_data(df: pd.DataFrame):
 st.title("💰 AI-Powered Cash Flow Forecasting & Decision Support System")
 
 # ==========================================
-# Sidebar: Dataset Selection & Ingestion
+# Sidebar: Raw Dataset Ingestion
 # ==========================================
 with st.sidebar:
-    st.header("📂 Data Source")
+    st.header("📂 Upload Raw Dataset")
+    uploaded_file = st.file_uploader(
+        "Upload Raw CSV or Excel file",
+        type=["csv", "xlsx", "xls"],
+        help="Upload your unprocessed financial records, accounting export, or operational transactions."
+    )
+    curr_sym = st.selectbox("Currency Unit", ["$", "₹", "€", "£"], index=0)
 
-    data_source_options = [
-        "🏢 Apple Inc. (Real SEC Filings, 2017–2026)",
-        "🏢 Microsoft Corp. (Real SEC Filings, 2017–2026)",
-        "🏢 Amazon.com (Real SEC Filings, 2017–2026)",
-        "🏢 Alphabet / Google (Real SEC Filings, 2017–2025)",
-        "🏢 Tesla Inc. (Real SEC Filings, 2018–2026)",
-        "📊 Sample SME Baseline (Processed 2-Year Series)",
-        "📦 Raw Retail Transactions (Unprocessed Order Logs)",
-        "🧹 Raw Messy SME Operations (Unprocessed Spreadsheet)",
-        "📁 Upload Custom File (CSV or Excel)",
-        "🌐 Kaggle & Live Data Pipeline",
-    ]
+if uploaded_file is None:
+    st.info("📂 **Upload a raw CSV or Excel dataset to begin.**")
+    st.markdown("""
+    Please upload your raw operational or cash flow dataset using the sidebar to start the analysis.
 
-    selected_source = st.selectbox("Choose Dataset Source", data_source_options, index=0)
-
-    # Smart currency symbol default
-    default_curr = "$" if any(k in selected_source for k in ["Apple", "Microsoft", "Amazon", "Alphabet", "Tesla", "Retail"]) else "₹"
-    curr_sym = st.selectbox("Currency Unit", ["$", "₹", "€", "£"], index=0 if default_curr == "$" else 1)
-
-    df_raw: Optional[pd.DataFrame] = None
-    data_origin_description = ""
-    raw_preview_df: Optional[pd.DataFrame] = None
-    raw_preview_title: str = ""
-
-    if "Apple" in selected_source:
-        data_path = PROCESSED_DATA_DIR / "real_cashflow_aapl.csv"
-        df_raw = load_csv_data(str(data_path))
-        data_origin_description = "Official audited SEC EDGAR quarterly cash flow statement (Apple Inc., 2017–2026, CIK: 0000320193)."
-        raw_json_path = UNPROCESSED_DATA_DIR / "raw_sec_edgar_aapl.json"
-        if raw_json_path.exists():
-            raw_preview_title = "Raw SEC EDGAR XBRL JSON (CIK 0000320193, US-GAAP Facts)"
-
-    elif "Microsoft" in selected_source:
-        data_path = PROCESSED_DATA_DIR / "real_cashflow_msft.csv"
-        df_raw = load_csv_data(str(data_path))
-        data_origin_description = "Official audited SEC EDGAR quarterly cash flow statement (Microsoft Corp., 2017–2026, CIK: 0000789019)."
-
-    elif "Amazon" in selected_source:
-        data_path = PROCESSED_DATA_DIR / "real_cashflow_amzn.csv"
-        df_raw = load_csv_data(str(data_path))
-        data_origin_description = "Official audited SEC EDGAR quarterly cash flow statement (Amazon.com Inc., 2017–2026, CIK: 0001018724)."
-
-    elif "Alphabet" in selected_source:
-        data_path = PROCESSED_DATA_DIR / "real_cashflow_googl.csv"
-        df_raw = load_csv_data(str(data_path))
-        data_origin_description = "Official audited SEC EDGAR quarterly cash flow statement (Alphabet Inc., 2017–2025, CIK: 0001652044)."
-
-    elif "Tesla" in selected_source:
-        data_path = PROCESSED_DATA_DIR / "real_cashflow_tsla.csv"
-        df_raw = load_csv_data(str(data_path))
-        data_origin_description = "Official audited SEC EDGAR quarterly cash flow statement (Tesla Inc., 2018–2026, CIK: 0001318605)."
-
-    elif "Sample SME Baseline" in selected_source:
-        df_raw = load_csv_data(str(SAMPLE_DATA_PATH))
-        data_origin_description = "Pre-packaged synthetic SME 2-year operational cash flow dataset."
-
-    elif "Raw Retail Transactions" in selected_source:
-        raw_csv_path = UNPROCESSED_DATA_DIR / "raw_retail_transactions.csv"
-        raw_unproc_df = load_csv_data(str(raw_csv_path))
-        raw_preview_df = raw_unproc_df
-        raw_preview_title = "Unprocessed Granular Transaction Records (Order-Level Logs)"
-        df_raw = preprocess_transactional_dataset(raw_unproc_df, freq="M")
-        data_origin_description = "Unprocessed order logs (244 transactions) aggregated into monthly cash flow series."
-
-    elif "Raw Messy SME Operations" in selected_source:
-        messy_path = UNPROCESSED_DATA_DIR / "raw_uncleaned_sme_cashflow.csv"
-        raw_unproc_df = load_csv_data(str(messy_path))
-        raw_preview_df = raw_unproc_df
-        raw_preview_title = "Unprocessed Messy SME Accounting Spreadsheet (Currency strings, missing values & non-standard headers)"
-        df_raw = clean_and_prepare_dataset(raw_unproc_df)
-        data_origin_description = "Unprocessed messy spreadsheet cleaned via regex sanitization and median imputation."
-
-    elif "Upload" in selected_source:
-        uploaded_file = st.file_uploader("Upload CSV or Excel file", type=["csv", "xlsx", "xls"])
-        if uploaded_file is not None:
-            if uploaded_file.name.endswith(".csv"):
-                temp_df = pd.read_csv(uploaded_file)
-            else:
-                temp_df = pd.read_excel(uploaded_file)
-
-            # Check if dataset is transaction-level (e.g. Kaggle sales/orders logs)
-            cols_lower = [c.lower() for c in temp_df.columns]
-            is_cashflow_ready = any(k in cols_lower for k in ["cash flow", "cash_flow", "inflow"]) and any(k in cols_lower for k in ["sales", "revenue"])
-
-            if not is_cashflow_ready and any(k in cols_lower for k in ["date", "time", "order"]):
-                st.info("💡 Transactional log detected. Choose aggregation frequency:")
-                agg_freq = st.selectbox("Aggregation Frequency", ["Monthly (Recommended)", "Weekly", "Daily", "Quarterly"])
-                freq_code = {"Monthly (Recommended)": "ME", "Weekly": "W", "Daily": "D", "Quarterly": "QE"}[agg_freq]
-                try:
-                    df_raw = preprocess_transactional_dataset(temp_df, freq=freq_code)
-                    data_origin_description = f"User uploaded transactional dataset (aggregated {agg_freq.lower()})."
-                    st.success("Successfully preprocessed transactional dataset into cash flow format!")
-                except Exception as e:
-                    st.warning(f"Transactional conversion failed: {e}. Trying standard cleaner.")
-                    df_raw = temp_df
-            else:
-                df_raw = temp_df
-                data_origin_description = "User uploaded custom dataset."
-        else:
-            st.info("Please upload a file or choose one of the real SEC / sample datasets above.")
-            st.stop()
-
-    elif "Kaggle" in selected_source:
-        st.subheader("Kaggle & Live ETL Pipeline")
-        pipeline_tab = st.radio("Source Mode", ["Kaggle Dataset", "Live SEC EDGAR Ticker"], horizontal=True)
-
-        if pipeline_tab == "Kaggle Dataset":
-            kaggle_slug = st.text_input("Kaggle Dataset Slug", value="thedevastator/superstore-sales", help="Format: owner/dataset-name")
-            st.caption("Requires `~/.kaggle/kaggle.json` credentials or Kaggle API keys.")
-            if st.button("🚀 Download & Preprocess from Kaggle"):
-                with st.spinner("Downloading and processing Kaggle dataset..."):
-                    try:
-                        df_raw = download_and_preprocess_kaggle(kaggle_slug)
-                        data_origin_description = f"Preprocessed Kaggle dataset ({kaggle_slug})."
-                        st.success("Kaggle dataset loaded and preprocessed!")
-                    except Exception as k_err:
-                        st.error(f"Kaggle download failed: {k_err}")
-                        st.info("Tip: You can also download the CSV manually from Kaggle and upload via 'Upload Custom File' above.")
-                        st.stop()
-            else:
-                st.info("Enter Kaggle slug and click the button above, or select another source.")
-                st.stop()
-
-        else:
-            live_ticker = st.text_input("Company Ticker", value="AAPL").upper()
-            if st.button("📡 Fetch Live SEC EDGAR Statement"):
-                with st.spinner(f"Fetching SEC filings for {live_ticker}..."):
-                    try:
-                        df_raw = fetch_sec_cashflow_dataset(live_ticker)
-                        data_origin_description = f"Live SEC EDGAR financial filings for {live_ticker}."
-                        st.success(f"Fetched {len(df_raw)} quarters for {live_ticker}!")
-                    except Exception as s_err:
-                        st.error(f"Failed to fetch live SEC data: {s_err}")
-                        st.stop()
-            else:
-                st.info("Click button above to fetch live SEC data.")
-                st.stop()
+    ### 🔄 Processing Flow:
+    1. **Upload Raw Dataset**: Provide an unprocessed `.csv` or `.xlsx` file.
+    2. **Raw Inspection (Step 1)**: Review the original, unmodified dataset as ingested.
+    3. **Automated Preprocessing**: CashFlowAI automatically normalizes column aliases, strips currency symbols and commas, imputes missing values, and derives cash flow targets.
+    4. **Cleaned Inspection (Step 2)**: Visually verify the transformed dataset before model ingestion.
+    5. **AI Forecasting & Analytics**: Explore ML forecasts, SHAP feature importance, what-if simulations, Monte Carlo risk distributions, and automated strategic recommendations.
+    """)
+    st.stop()
+    import sys
+    sys.exit(0)
 
 # ==========================================
-# Model Training & Feature Extraction
+# Step 1: Read Raw Dataset
 # ==========================================
 try:
-    if df_raw is None or df_raw.empty:
-        st.warning("No data selected. Please choose a dataset from the sidebar.")
-        st.stop()
+    if uploaded_file.name.lower().endswith(".csv"):
+        raw_df = pd.read_csv(uploaded_file)
+    else:
+        raw_df = pd.read_excel(uploaded_file)
+except Exception as read_err:
+    st.error(f"❌ Failed to read uploaded file: {read_err}")
+    st.stop()
 
-    cleaned_df, feature_cols, model, X_train, X_test, y_train, y_test, y_pred, metrics = prepare_model_data(df_raw)
+if raw_df is None or raw_df.empty:
+    st.error("❌ The uploaded dataset is empty. Please upload a file with financial records.")
+    st.stop()
+
+# ==========================================
+# Step 2: Run Existing Preprocessing Pipeline
+# ==========================================
+try:
+    cols_lower = [str(c).lower() for c in raw_df.columns]
+    is_cashflow_ready = any(k in cols_lower for k in ["cash flow", "cash_flow", "inflow", "sales", "revenue", "turnover"])
+    is_transactional = not is_cashflow_ready and any(k in cols_lower for k in ["order", "invoice", "transaction"])
+
+    if is_transactional:
+        from src.data_import import preprocess_transactional_dataset
+        processed_df = preprocess_transactional_dataset(raw_df.copy(), freq="M")
+    else:
+        processed_df = clean_and_prepare_dataset(raw_df.copy())
+        if "Cash Flow" not in processed_df.columns:
+            processed_df["Cash Flow"] = derive_cash_flow_target(processed_df)
+
+except Exception as prep_err:
+    st.error(f"❌ Error during data preprocessing: {prep_err}")
+    st.stop()
+
+# ==========================================
+# Step 3: Run Model Training on PROCESSED Data
+# ==========================================
+try:
+    cleaned_df, feature_cols, model, X_train, X_test, y_train, y_test, y_pred, metrics = prepare_model_data(processed_df)
 except Exception as exc:
-    st.error(f"The dataset could not be processed: {exc}")
+    st.error(f"❌ The processed dataset could not be prepared for forecasting: {exc}")
     st.stop()
 
 if "Cash Flow" not in cleaned_df.columns:
@@ -280,8 +183,7 @@ difference = 0.0
 # Main Dashboard KPI Header
 # ==========================================
 with st.container():
-    if data_origin_description:
-        st.caption(f"📌 **Active Dataset:** {data_origin_description}")
+    st.caption(f"📁 **Active Upload:** `{uploaded_file.name}` ({len(raw_df)} raw records ➔ {len(cleaned_df)} model-ready observations)")
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Latest Cash Flow", format_currency(float(latest_row["Cash Flow"]), curr_sym))
     col2.metric("Predicted Cash Flow", format_currency(base_prediction, curr_sym))
@@ -294,50 +196,96 @@ tabs = st.tabs(["📊 Data & Preprocessing", "📈 Forecast", "🔍 Explainabili
 # Tab 0: Data & Preprocessing
 # ==========================================
 with tabs[0]:
-    st.subheader("Dataset Overview & Operational Metrics")
-    c_m1, c_m2, c_m3, c_m4 = st.columns(4)
-    c_m1.metric("Total Observations", len(cleaned_df))
-    if "Date" in cleaned_df.columns:
-        c_m2.metric("Start Date", str(cleaned_df["Date"].iloc[0])[:10])
-        c_m3.metric("End Date", str(cleaned_df["Date"].iloc[-1])[:10])
-    c_m4.metric("Avg Sales/Revenue", format_currency(float(cleaned_df["Sales"].mean()) if "Sales" in cleaned_df.columns else 0.0, curr_sym))
+    st.subheader("Data Engineering & Preprocessing Pipeline")
 
-    # Raw vs Processed Data Inspector
-    if raw_preview_df is not None:
-        st.markdown("---")
-        with st.expander(f"📦 Step 1: Raw Unprocessed Data Preview ({raw_preview_title})", expanded=True):
-            st.info("💡 **Unprocessed Raw Data:** Displaying raw inputs prior to data cleansing, column normalization, or frequency aggregation:")
-            st.dataframe(raw_preview_df.head(15), **CHART_KWARGS)
-        st.caption("⬇️ **ETL Pipeline Applied: Temporal aggregation, currency string sanitization, and median imputation** ⬇️")
+    # ----------------------------------------------------
+    # Step 1: Raw / Unprocessed Data
+    # ----------------------------------------------------
+    st.markdown("### 📦 Step 1: Raw / Unprocessed Data")
+    st.markdown("This is the dataset exactly as uploaded by the user, before CashFlowAI performs any cleaning or transformation.")
 
-    elif "Apple" in selected_source and (UNPROCESSED_DATA_DIR / "raw_sec_edgar_aapl.json").exists():
-        with st.expander("🏛️ Data Provenance: Inspect Raw SEC EDGAR XBRL Data (Apple Inc.)", expanded=False):
-            st.markdown("""
-            **Official Source:** U.S. Securities and Exchange Commission (SEC) EDGAR API
-            - **Entity:** Apple Inc. (CIK: `0000320193`)
-            - **Raw File:** `unprocessed_data/raw_sec_edgar_aapl.json`
-            - **Key US-GAAP XBRL Tags Extracted:**
-              - Sales: `RevenueFromContractWithCustomerExcludingAssessedTax` / `SalesRevenueNet`
-              - Operating Cash Flow: `NetCashProvidedByUsedInOperatingActivities` (Un-cumulated from YTD sums)
-              - Working Capital: `AccountsReceivableNetCurrent`, `AccountsPayableCurrent`, `CashAndCashEquivalentsAtCarryingValue`
-            """)
+    col_r1, col_r2, col_r3, col_r4 = st.columns(4)
+    col_r1.metric("Raw Rows", len(raw_df))
+    col_r2.metric("Raw Columns", len(raw_df.columns))
+    col_r3.metric("Raw Missing Cells", int(raw_df.isna().sum().sum()))
+    col_r4.metric("File Type", uploaded_file.name.split(".")[-1].upper())
+
+    with st.expander("🔍 Inspect Raw Column Headers", expanded=False):
+        st.write(list(raw_df.columns))
+
+    st.dataframe(raw_df, **CHART_KWARGS)
 
     st.markdown("---")
-    st.subheader("Cleaned & Preprocessed Data Preview (Model-Ready)")
-    st.dataframe(cleaned_df.head(25), **CHART_KWARGS)
 
-    st.subheader("Statistical Summary")
-    st.write(cleaned_df.describe().T)
+    # ----------------------------------------------------
+    # Preprocessing Transformations Summary
+    # ----------------------------------------------------
+    st.markdown("### ⚙️ Preprocessing Transformations Applied")
 
-    with st.expander("🛠️ Preprocessing Pipeline & Lineage Details", expanded=False):
-        st.markdown(f"""
-        - **Active Dataset**: `{selected_source}`
-        - **Storage Directory**: `processed_data/` (Processed) | `unprocessed_data/` (Raw Source)
-        - **Column Aliases Normalized**: Canonical mapping for Sales, Expenses, Receivables, Payables, Inflow, Outflow.
-        - **Sanitization**: Automatic stripping of currency glyphs, commas, and parsing ISO dates.
-        - **Discrete Period Accounting**: For SEC quarterly filings, cumulative YTD cash flows are converted into discrete 90-day periods.
-        - **Missing Value Handling**: Median-imputation applied across numeric financial series.
-        """)
+    normalized_mappings = {}
+    for orig_col in raw_df.columns:
+        norm = normalize_column_name(orig_col)
+        if norm != orig_col and norm in processed_df.columns:
+            normalized_mappings[orig_col] = norm
+
+    tr_col1, tr_col2, tr_col3 = st.columns(3)
+    with tr_col1:
+        st.markdown("**🔤 Column Normalization**")
+        if normalized_mappings:
+            for orig, target in normalized_mappings.items():
+                st.caption(f"• `{orig}` ➔ **`{target}`**")
+        else:
+            st.caption("• All headers already canonical")
+
+    with tr_col2:
+        st.markdown("**🧹 Data Sanitization & Cleaning**")
+        raw_missing = int(raw_df.isna().sum().sum())
+        proc_missing = int(processed_df.isna().sum().sum())
+        st.caption("• Stripped currency symbols (`$`, commas)")
+        st.caption(f"• Missing values imputed: {raw_missing} ➔ {proc_missing}")
+        st.caption("• Date ISO temporal alignment & chronological sorting")
+
+    with tr_col3:
+        st.markdown("**📐 Target Derivation**")
+        if "Cash Flow" in raw_df.columns:
+            st.caption("• `Cash Flow` provided in upload")
+        else:
+            st.caption("• `Cash Flow` derived automatically")
+
+    st.markdown("---")
+
+    # ----------------------------------------------------
+    # Step 2: Processed / Cleaned Data
+    # ----------------------------------------------------
+    st.markdown("### 🧹 Step 2: Processed / Cleaned Data")
+    st.markdown("This is the same dataset after CashFlowAI's preprocessing pipeline has cleaned, standardized and prepared it for machine learning.")
+
+    col_p1, col_p2, col_p3, col_p4 = st.columns(4)
+    col_p1.metric("Processed Rows", len(processed_df))
+    col_p2.metric("Processed Columns", len(processed_df.columns))
+    if "Date" in processed_df.columns:
+        col_p3.metric("Start Date", str(processed_df["Date"].iloc[0])[:10])
+        col_p4.metric("End Date", str(processed_df["Date"].iloc[-1])[:10])
+    else:
+        col_p3.metric("Missing Values", 0)
+        col_p4.metric("Status", "Standardized")
+
+    st.dataframe(processed_df, **CHART_KWARGS)
+
+    with st.expander("📊 Statistical Summary (Processed Data)", expanded=False):
+        st.write(processed_df.describe().T)
+
+    st.markdown("---")
+
+    # ----------------------------------------------------
+    # Step 3: Model-Ready Data
+    # ----------------------------------------------------
+    st.markdown("### 📈 Step 3: Model-Ready Data")
+    st.markdown("The machine learning models ingest the processed data below for regression forecasting:")
+    m_info1, m_info2, m_info3 = st.columns(3)
+    m_info1.info(f"**Target Variable ($y$):** `Cash Flow`")
+    m_info2.info(f"**Feature Variables ($X$):** {', '.join(feature_cols)}")
+    m_info3.info(f"**Train / Test Split:** {len(X_train)} train | {len(X_test)} test")
 
 # ==========================================
 # Tab 1: Forecast

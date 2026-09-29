@@ -28,12 +28,10 @@ graph TD
 
 ## ✨ Key Features
 
-- **📂 Real-World & Kaggle Data Ingestion**:
-  - **Pre-packaged Real SEC Datasets**: Official audited quarterly cash flow filings (2017–2026) for **Apple Inc. (AAPL)**, **Microsoft Corp. (MSFT)**, **Amazon (AMZN)**, **Alphabet/Google (GOOGL)**, and **Tesla (TSLA)**.
-  - **Kaggle Automated Ingestion & Preprocessing**: Download and preprocess any financial or e-commerce transaction dataset directly from Kaggle via the Kaggle API.
-  - **Transaction-to-CashFlow ETL Pipeline**: Converts raw order/invoice logs (Order Date, Sales, Profit, Cost) into periodic cash flow metrics (Daily, Weekly, Monthly, Quarterly).
-  - **Upload Custom Datasets**: Upload `.csv`, `.xlsx`, or `.xls` files with automatic column alias normalization and currency sanitization.
-  - **Sample SME Baseline**: 2-year synthetic operational baseline (`processed_data/sample_cashflow_data.csv`).
+- **📂 User-Driven Raw Data Ingestion & Preprocessing**:
+  - **Upload Raw Dataset**: Upload any raw, unprocessed operational or transactional file (`.csv`, `.xlsx`, `.xls`).
+  - **Transparent Transformation**: Inspect raw data (**Step 1**) side-by-side with cleaned, normalized, and imputed data (**Step 2**) before feeding into machine learning.
+  - **Automated Preprocessing**: Column alias normalization, regex currency stripping, chronological sorting, and median missing-value imputation.
 
 - **📈 Machine Learning Cash Flow Forecasting**:
   - Multiple Linear Regression trained on historical operating features.
@@ -111,37 +109,18 @@ git clone https://github.com/bakaprince/CashFlowAI.git
 cd CashFlowAI
 ```
 
-### 2. Create and Activate a Virtual Environment
-
-**Windows (PowerShell):**
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-```
-
-**macOS / Linux:**
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-### 3. Install Dependencies
+### 2. Install Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Run the Streamlit Dashboard
+### 3. Run the Streamlit Dashboard
 
 ```bash
 streamlit run app.py
 ```
 
-Or run directly via your virtual environment python:
-
-```powershell
-.\.venv\Scripts\python.exe -m streamlit run app.py
-```
 
 The application will start and open in your default browser at:
 **`http://localhost:8501`**
@@ -165,35 +144,31 @@ When uploading custom data, the application automatically handles column variati
 
 ---
 
-## 🌐 Data Ingestion & Live ETL Pipelines
+## 🌐 User-Driven Data Ingestion & Preprocessing
 
-CashFlowAI includes automated ingestion and preprocessing capabilities accessible directly in the Streamlit application and programmatically via `src/data_import.py`:
+CashFlowAI follows a strict, transparent raw-to-processed pipeline:
 
-### 1. Official SEC EDGAR Corporate Filings (No API Key Required)
-- **Built-in Datasets**: Select corporate quarterly filings (2017–2026) for Apple (`AAPL`), Microsoft (`MSFT`), Amazon (`AMZN`), Alphabet (`GOOGL`), or Tesla (`TSLA`) directly from the sidebar.
-- **Live Retrieval**: Query any public SEC ticker live via the **Kaggle & Live Data Pipeline** sidebar tab.
-- **XBRL Ingestion Module**: Use `fetch_sec_cashflow_dataset(ticker)` from `src/data_import.py`.
-
-### 2. Live Kaggle Ingestion & Preprocessing
-- Connect directly to the Kaggle API to pull enterprise datasets (e.g. `thedevastator/superstore-sales`).
-- Automatically aggregates granular transaction logs into periodic cash flows.
-- **Kaggle Module**: Use `download_and_preprocess_kaggle(slug)` from `src/data_import.py`.
-
-### 3. Local Transactional & Accounting Spreadsheets
-- Upload raw transaction logs or messy spreadsheets (`.csv`, `.xlsx`, `.xls`) with automated column aliasing, currency string stripping, and median imputation.
-- Select frequency: `Daily`, `Weekly`, `Monthly`, or `Quarterly`.
+1. **Upload Raw Dataset**: Users upload their unprocessed operational or financial logs (`.csv`, `.xlsx`, `.xls`) via the sidebar uploader.
+2. **Step 1: Raw Data Inspection**: The original dataset is preserved in memory and rendered in its exact, unaltered form.
+3. **Automated Cleaning & Transformation**:
+   - Column aliases normalized to canonical standards (`Sales`, `Expenses`, `Receivables`, `Payables`, `Cash Balance`).
+   - Currency symbols (`$`, commas) stripped.
+   - Non-standard dates parsed and sorted chronologically.
+   - Missing cells imputed via median values.
+   - `Cash Flow` target derived if omitted.
+4. **Step 2: Cleaned Data Inspection**: Side-by-side comparison of the standardized dataset ready for machine learning.
+5. **Step 3: Machine Learning & Decision Intelligence**: Model training, SHAP explainability, what-if perturbations, Monte Carlo distributions, and strategic recommendations.
 
 ---
 
-## 🔬 Data Lineage & ETL Processing (Raw vs Processed)
+## 🔬 Data Lineage & Test Datasets
 
-CashFlowAI maintains both raw and processed datasets to demonstrate exact real-world data engineering:
-- **`unprocessed_data/`**: Holds raw SEC EDGAR XBRL filings (`raw_sec_edgar_aapl.json`), granular transactional order records (`raw_retail_transactions.csv`), and messy SME bookkeeping spreadsheets (`raw_uncleaned_sme_cashflow.csv`).
-- **`processed_data/`**: Holds standardized, normalized, and imputed cash flow time series consumed directly by the machine learning forecasting model.
+To test the application, sample raw files are available in `unprocessed_data/`:
+- `unprocessed_data/raw_uncleaned_sme_cashflow.csv`: Real-world messy SME bookkeeping sheet with currency strings, non-standard headers, and missing values.
+- `unprocessed_data/raw_retail_transactions.csv`: Granular order-level transaction logs.
+- `unprocessed_data/raw_sec_edgar_aapl.json`: Audited SEC EDGAR XBRL facts.
 
-To inspect how raw data is transformed into model-ready series:
-- Launch `streamlit run app.py` and select **`📦 Raw Retail Transactions`** or **`🧹 Raw Messy SME Operations`** in the sidebar.
-- Open **Tab 0 ("📊 Data & Preprocessing")** to view the live **Raw Unprocessed Data Preview** alongside the cleaned, model-ready dataset.
+Simply upload any of these files into the Streamlit sidebar uploader to experience the end-to-end data pipeline.
 
 ---
 
