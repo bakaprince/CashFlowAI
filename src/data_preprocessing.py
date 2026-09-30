@@ -8,7 +8,7 @@ COLUMN_ALIASES = {
     "expenses": ["expenses", "operating expenses", "costs", "opex", "overhead"],
     "receivables": ["receivables", "accounts receivable", "ar", "debtors"],
     "payables": ["payables", "accounts payable", "ap", "creditors"],
-    "cash balance": ["cash balance", "cash_balance", "closing balance", "bank balance", "balance"],
+    "cash balance": ["cash balance", "cash_balance", "closing balance", "bank balance", "balance", "cash and cash equivalents", "cash & cash equivalents", "cash and equivalents"],
     "cash inflow": ["cash inflow", "inflow", "cash collections", "collections"],
     "cash outflow": ["cash outflow", "outflow", "disbursements", "cash spent"],
     "cash flow": ["cash flow", "net cash flow", "operating cash flow"],
@@ -33,7 +33,7 @@ def normalize_column_name(name: str) -> str:
         return "Cash Inflow"
     if "outflow" in clean_tokens or ("cash" in clean_tokens and "out" in clean_tokens) or "disbursements" in clean_tokens:
         return "Cash Outflow"
-    if "balance" in clean_tokens:
+    if "balance" in clean_tokens or ("cash" in clean_tokens and any(k in clean_tokens for k in ["equivalents", "equivalent"])):
         return "Cash Balance"
     if "receivable" in clean_tokens or "receivables" in clean_tokens or "ar" in clean_tokens or "debtors" in clean_tokens:
         return "Receivables"
@@ -79,6 +79,14 @@ def clean_and_prepare_dataset(df: pd.DataFrame) -> pd.DataFrame:
         if column in cleaned.columns:
             median_val = cleaned[column].median()
             cleaned[column] = cleaned[column].fillna(median_val if pd.notna(median_val) else 0.0)
+
+    # Derive operational flows if dataset reports top-line revenue & operating cash flow
+    if "Sales" in cleaned.columns and "Cash Flow" in cleaned.columns and "Expenses" not in cleaned.columns:
+        cleaned["Expenses"] = (cleaned["Sales"] - cleaned["Cash Flow"]).clip(lower=0)
+    if "Sales" in cleaned.columns and "Cash Inflow" not in cleaned.columns:
+        cleaned["Cash Inflow"] = cleaned["Sales"]
+    if "Expenses" in cleaned.columns and "Cash Outflow" not in cleaned.columns:
+        cleaned["Cash Outflow"] = cleaned["Expenses"]
 
     return cleaned.reset_index(drop=True)
 

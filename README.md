@@ -68,7 +68,11 @@ graph TD
 CashFlowAI/
 ├── app.py                            # Main Streamlit web application & UI tabs
 ├── unprocessed_data/                 # Raw, unprocessed datasets showing initial states
-│   ├── raw_sec_edgar_aapl.json       # Official raw SEC EDGAR XBRL corporate filings (Apple CIK 0000320193)
+│   ├── raw_sec_edgar_aapl.csv        # SEC EDGAR-derived raw quarterly facts (Apple CIK 0000320193)
+│   ├── raw_sec_edgar_amzn.csv        # SEC EDGAR-derived raw quarterly facts (Amazon CIK 0001018724)
+│   ├── raw_sec_edgar_googl.csv       # SEC EDGAR-derived raw quarterly facts (Alphabet CIK 0001652044)
+│   ├── raw_sec_edgar_msft.csv        # SEC EDGAR-derived raw quarterly facts (Microsoft CIK 0000789019)
+│   ├── raw_sec_edgar_tsla.csv        # SEC EDGAR-derived raw quarterly facts (Tesla CIK 0001318605)
 │   ├── raw_retail_transactions.csv   # Granular order-level retail transaction logs
 │   ├── raw_uncleaned_sme_cashflow.csv# Messy accounting spreadsheet with currency symbols & NaNs
 │   └── README.md                     # Data provenance, CIK taxonomy & ETL documentation
@@ -166,7 +170,7 @@ CashFlowAI follows a strict, transparent raw-to-processed pipeline:
 To test the application, sample raw files are available in `unprocessed_data/`:
 - `unprocessed_data/raw_uncleaned_sme_cashflow.csv`: Real-world messy SME bookkeeping sheet with currency strings, non-standard headers, and missing values.
 - `unprocessed_data/raw_retail_transactions.csv`: Granular order-level transaction logs.
-- `unprocessed_data/raw_sec_edgar_aapl.json`: Audited SEC EDGAR XBRL facts.
+- `unprocessed_data/raw_sec_edgar_aapl.csv` (and AMZN, GOOGL, MSFT, TSLA): SEC EDGAR-derived raw quarterly financial statements with genuine SEC-reported facts.
 
 Simply upload any of these files into the Streamlit sidebar uploader to experience the end-to-end data pipeline.
 

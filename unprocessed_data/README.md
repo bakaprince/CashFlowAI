@@ -21,9 +21,9 @@ This directory contains the **unprocessed raw data assets** utilized by CashFlow
 | **GOOGL** | Alphabet Inc. | `0001652044` | 10-Q & 10-K |
 | **TSLA** | Tesla Inc. | `0001318605` | 10-Q & 10-K |
 
-### Raw File in this Directory:
-- **`raw_sec_edgar_aapl.json`**:
-  The raw XBRL JSON tree directly extracted from the SEC EDGAR facts database for Apple Inc.
+### Raw SEC-Derived Files in this Directory:
+- **`raw_sec_edgar_aapl.csv`**, **`raw_sec_edgar_amzn.csv`**, **`raw_sec_edgar_googl.csv`**, **`raw_sec_edgar_msft.csv`**, **`raw_sec_edgar_tsla.csv`**:
+  Standardized CSV representations extracted directly from the official SEC EDGAR XBRL Company Facts database. Each file contains genuine SEC-reported financial line items: `Date`, `Revenue`, `Operating Cash Flow`, `Accounts Receivable`, `Accounts Payable`, and `Cash and Cash Equivalents`.
 
 ### How Was It Processed? (Raw $\to$ `processed_data/real_cashflow_aapl.csv`)
 1. **US-GAAP XBRL Taxonomy Extraction**:

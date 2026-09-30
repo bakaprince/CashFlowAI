@@ -31,14 +31,30 @@ SEC_CIK_MAP = {
 }
 
 
-def fetch_sec_cashflow_dataset(ticker: str = "AAPL", user_agent: str = "CashFlowAIResearch research@cashflowai.internal") -> pd.DataFrame:
+def fetch_sec_cashflow_dataset(
+    ticker: str = "AAPL",
+    user_agent: str = "CashFlowAIResearch research@cashflowai.internal",
+    prefer_local_raw: bool = True,
+) -> pd.DataFrame:
     """
     Fetches real audited quarterly financial statements from SEC EDGAR XBRL API
-    and transforms them into a clean, unaccumulated cash flow time series.
+    (or loads from local SEC EDGAR-derived raw CSV) and transforms them into a clean,
+    unaccumulated cash flow time series.
     """
     ticker_upper = ticker.upper()
     if ticker_upper not in SEC_CIK_MAP:
         raise ValueError(f"Ticker '{ticker}' not found in supported CIK map. Supported: {list(SEC_CIK_MAP.keys())}")
+
+    local_raw_csv = RAW_DATA_DIR / f"raw_sec_edgar_{ticker_upper.lower()}.csv"
+    if prefer_local_raw and local_raw_csv.exists():
+        raw_df = pd.read_csv(local_raw_csv)
+        cleaned = clean_and_prepare_dataset(raw_df)
+        cleaned["Date"] = pd.to_datetime(cleaned["Date"]).dt.strftime("%Y-%m-%d")
+        final_cols = ["Date", "Sales", "Expenses", "Receivables", "Payables", "Cash Balance", "Cash Inflow", "Cash Outflow", "Cash Flow"]
+        for c in final_cols:
+            if c != "Date":
+                cleaned[c] = cleaned[c].astype(float).round(2)
+        return cleaned[final_cols]
 
     cik, entity_name = SEC_CIK_MAP[ticker_upper]
     url = f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik.zfill(10)}.json"
